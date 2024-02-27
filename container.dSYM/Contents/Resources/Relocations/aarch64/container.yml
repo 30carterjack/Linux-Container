@@ -2,6 +2,13 @@
 triple:          'arm64-apple-darwin'
 binary-path:     '/Users/jackcarter/Documents/uni of bath/CM50258 | Principles of Programming/CW2/Linux-Container/container'
 relocations:
-  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100003F58, symSize: 0x34 }
-  - { offsetInCU: 0x41, offset: 0x41, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100003F58, symSize: 0x34 }
+  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _choose_hostname, symObjAddr: 0x0, symBinAddr: 0x10000337C, symSize: 0x118 }
+  - { offsetInCU: 0x41, offset: 0x41, size: 0x8, addend: 0x0, symName: _choose_hostname, symObjAddr: 0x0, symBinAddr: 0x10000337C, symSize: 0x118 }
+  - { offsetInCU: 0x66, offset: 0x66, size: 0x8, addend: 0x0, symName: _choose_hostname.suits, symObjAddr: 0x8E8, symBinAddr: 0x100008000, symSize: 0x0 }
+  - { offsetInCU: 0x7B, offset: 0x7B, size: 0x8, addend: 0x0, symName: _choose_hostname.minor, symObjAddr: 0x908, symBinAddr: 0x100008020, symSize: 0x0 }
+  - { offsetInCU: 0x90, offset: 0x90, size: 0x8, addend: 0x0, symName: _choose_hostname.major, symObjAddr: 0x978, symBinAddr: 0x100008090, symSize: 0x0 }
+  - { offsetInCU: 0x107, offset: 0x107, size: 0x8, addend: 0x0, symName: _cleanup_resources, symObjAddr: 0x118, symBinAddr: 0x100003494, symSize: 0x78 }
+  - { offsetInCU: 0x139, offset: 0x139, size: 0x8, addend: 0x0, symName: _error_cleanup, symObjAddr: 0x190, symBinAddr: 0x10000350C, symSize: 0x2C }
+  - { offsetInCU: 0x16B, offset: 0x16B, size: 0x8, addend: 0x0, symName: _handle_child_process_uid_map, symObjAddr: 0x1BC, symBinAddr: 0x100003538, symSize: 0x368 }
+  - { offsetInCU: 0x1FB, offset: 0x1FB, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x524, symBinAddr: 0x1000038A0, symSize: 0x3C4 }
 ...
