@@ -40,7 +40,6 @@ struct child_process_config {
 int main(int argc, char **argv) {
     struct child_process_config config = {0};
 
-    // Your code here
-    printf("Hello, world!\");
+    printf("Hello, world!\n");
     return 0;
 }
