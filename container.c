@@ -4,7 +4,7 @@
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <linux_types.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/mount.h>
@@ -15,6 +15,7 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <limits.h>
+/*#include <linux/capability.h>*/
 
 struct child_process_config {
     int argc;
@@ -94,8 +95,163 @@ int handle_child_process_uid_map(pid_t child_process_pid, int fd) {
 
 int userns(struct child_process_config *config) {
     fprintf(stderr, "Entering user namespace...\n");
-    int has_userns !unshare(CLONE_NEWUSER);
+
+    // Check if the operating system is macOS
+    fprintf(stderr, "User namespaces are not supported on linux.\n");
+    return -1;
+    
+    // On non-macOS systems (e.g., Linux), proceed with user namespace setup
+    int has_userns = !unshare(CLONE_NEWUSER);
+    if (write(config->fd, &has_userns, sizeof(has_userns)) != sizeof(has_userns)) {
+        fprintf(stderr, "Failed to write to parent process: %s\n", strerror(errno));
+        return -1;
+    }
+    int result = 0;
+    if (read(config->fd, &result, sizeof(result)) != sizeof(result)) {
+        fprintf(stderr, "Failed to read from parent process: %s\n", strerror(errno));
+        return -1;
+    }
+    if (result) return -1;
+    if (has_userns) {
+        fprintf(stderr, "Setting up user namespace...\n");
+    } else {
+        fprintf(stderr, "Failed to enter user namespace.\n");
+    }
+    fprintf(stderr, "=> switching to uid %d / gid %d...\n", config->uid, config->uid);
+    if (setuid(config->uid) == -1 || setgid(config->uid) == -1) {
+        fprintf(stderr, "Failed to switch to uid/gid %d: %s\n", config->uid, strerror(errno));
+        return -1;
+    }
+    fprintf(stderr, "done\n");
+    return 0;
 }
+
+int child_process(void *arg) {
+    struct child_process_config *config = arg;
+    if (sethostname(config->hostname, strlen(config->hostname))
+        || mounts(config)
+        || userns(config)
+        || capabilities(config)
+        || syscalls(config)) {
+            close(config->fd);
+            return -1;
+    }
+    if (close(config->fd)) {
+        fprintf(stderr, "Failed to close file descriptor: %s\n", strerror(errno));
+        return -1;
+    }
+    if (execve(config->argv[0], config->argv, NULL)) {
+        fprintf(stderr, "Failed to execute %s: %s\n", config->argv[0], strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int capabilities() {
+    fprintf(stderr, "Setting capabilities...\n");
+}
+
+int drop_capabilities[] = {
+    CAP_AUDIT_CONTROL,
+    CAP_AUDIT_WRITE,
+    CAP_BLOCK_SUSPEND,
+    CAP_DAC_READ_SEARCH,
+    CAP_FSETID,
+    CAP_IPC_LOCK,
+    CAP_MAC_ADMIN,
+    CAP_MAC_OVERRIDE,
+    CAP_MKNOD,
+    CAP_SETFCAP,
+    CAP_SYSLOG,
+    CAP_SYS_ADMIN,
+    CAP_SYS_BOOT,
+    CAP_SYS_MODULE,
+    CAP_SYS_NICE,
+    CAP_SYS_RAWIO,
+    CAP_SYS_RESOURCE,
+    CAP_SYS_TIME,
+    CAP_WAKE_ALARM
+};
+
+int set_capabilities() {
+    size_t num_caps = sizeof(drop_capabilities) / sizeof(*drop_capabilities);
+    fprintf(stderr, "Dropping capabilities...\n");
+    for (size_t i = 0; i < num_caps; i++) {
+        if (prctl(PR_CAPBSET_DROP, drop_capabilities[i], 0, 0, 0)) {
+            fprintf(stderr, "Failed to drop capability %d: %s\n", drop_capabilities[i], strerror(errno));
+            return 1;
+        }
+    }
+    fprintf(stderr, "Capabilities dropped successfully\n");
+
+    fprintf(stderr, "Setting inheritable capabilities...\n");
+    cap_t caps = NULL;
+    if (!(caps = cap_get_proc()) ||
+        cap_set_flag(caps, CAP_INHERITABLE, num_caps, drop_capabilities, CAP_CLEAR) ||
+        cap_set_proc(caps)) {
+        fprintf(stderr, "Failed to set inheritable capabilities: %s\n", strerror(errno));
+        if (caps) cap_free(caps);
+        return 1;
+    }
+    fprintf(stderr, "Inheritable capabilities set successfully\n");
+    if (caps) cap_free(caps);
+    return 0;
+}
+
+int mounts() {
+    fprintf(stderr, "=> Remounting with MS_PRIVATE...\n");
+    if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL)) {
+        fprintf(stderr, "Failed to remount /: %s\n", strerror(errno));
+        return -1;
+    }
+    fprintf(stderr, "Remounted / with MS_PRIVATE\n");
+
+    fprintf(stderr, "=> Creating a temporary directory and bind mount...\n");
+    char *tmpdir = "/tmp/container";
+    if (mkdir(tmpdir, 0755) && errno != EEXIST) {
+        fprintf(stderr, "Failed to create temporary directory: %s\n", strerror(errno));
+        return -1;
+    }
+
+    char mount_dir[] = "/tmp/container/mount";
+    if (mount(config->mount_dir, mount_dir, NULL, MS_BIND | MS_PRIVATE, NULL)) {
+        fprintf(stderr, "Failed to bind mount %s to %s: %s\n", config->mount_dir, tmpdir, strerror(errno));
+        return -1;
+    }
+    fprintf(stderr, "=> Bind mounting %s to %s successful...\n", tmpdir, mount_dir);
+
+    fprintf(stderr, "=> Pivoting root...\n");
+    if (pivot_root(mount_dir, mount_dir)) {
+        fprintf(stderr, "Failed to pivot root: %s\n", strerror(errno));
+        return -1;
+    }
+    fprintf(stderr, "Pivoted root successfully\n");
+
+    char old_root[sizeof(mount_dir) + 1];
+    strcpy(old_root, mount_dir);
+
+    fprintf(stderr, "=> Unmounting old root: %s...\n", old_root);
+    if (chdir("/")) {
+        fprintf(stderr, "Failed to change directory to /: %s\n", strerror(errno));
+        return -1;
+    }
+
+    if (umount2(old_root, MNT_DETACH)) {
+        fprintf(stderr, "Failed to unmount old root: %s\n", strerror(errno));
+        return -1;
+    }
+
+    if (rmdir(old_root)) {
+        fprintf(stderr, "Failed to remove old root: %s\n", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int pivot_root(const char *new_root, const char *put_old) {
+    return syscall(SYS_pivot_root, new_root, put_old);
+}
+
 
 
 
@@ -145,7 +301,7 @@ finish_options:
         goto cleanup;
     }
     if (major < 10) {
-        fprintf(stderr, "Unsupported macOS version: %s\n", host.release);
+        fprintf(stderr, "Unsupported linux version: %s\n", host.release);
         goto cleanup;
     }
     fprintf(stderr, "%s on %s\n", host.release, host.sysname);
